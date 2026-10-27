@@ -194,6 +194,89 @@
     }
   };
 
+  /* ---------- focus monitor (face detection) ---------- */
+  const FocusMonitor = {
+    active: false, detector: null, canvas: null, ctx: null,
+    absentSince: null, alertShown: false, interval: null,
+    ABSENT_SECS: 20,   // seconds without a face before alerting
+    CHECK_MS: 3000,    // how often to check (ms)
+
+    async init() {
+      /* FaceDetector is a Chrome/Edge API; gracefully skip if missing */
+      if (!window.FaceDetector) return false;
+      try { this.detector = new FaceDetector({ fastMode: true, maxDetectedFaces: 1 }); return true; }
+      catch (e) { return false; }
+    },
+
+    start() {
+      if (this.active) return;
+      this.init().then((ok) => {
+        if (!ok) return; /* silently skip on Firefox / Safari */
+        this.active = true;
+        this.canvas = document.createElement('canvas');
+        this.ctx = this.canvas.getContext('2d');
+        this.absentSince = null; this.alertShown = false;
+        this.interval = setInterval(() => this._check(), this.CHECK_MS);
+      });
+    },
+
+    stop() {
+      this.active = false;
+      clearInterval(this.interval); this.interval = null;
+      this._hideAlert();
+    },
+
+    async _check() {
+      if (!this.active || !Cam.stream) return;
+      const v = $('#focusCam video') || $('#examCam video');
+      if (!v || v.readyState < 2 || v.paused) return;
+      try {
+        this.canvas.width = v.videoWidth || 320;
+        this.canvas.height = v.videoHeight || 240;
+        this.ctx.drawImage(v, 0, 0);
+        const faces = await this.detector.detect(this.canvas);
+        if (faces.length > 0) {
+          /* face seen — reset */
+          this.absentSince = null; this.alertShown = false;
+          this._hideAlert();
+        } else {
+          /* no face */
+          if (!this.absentSince) this.absentSince = now();
+          const secs = (now() - this.absentSince) / 1000;
+          if (secs >= this.ABSENT_SECS && !this.alertShown) {
+            this.alertShown = true;
+            this._showAlert(Math.round(secs));
+            SN.Sound.chime && SN.Sound.chime(1);
+            notify('Are you still there?', 'No face detected for ' + Math.round(secs) + ' seconds. Come back and keep studying!');
+          }
+        }
+      } catch (e) { /* frame not ready — skip */ }
+    },
+
+    _showAlert(secs) {
+      let box = $('#focusAlert');
+      if (!box) {
+        box = document.createElement('div');
+        box.id = 'focusAlert';
+        box.innerHTML = `<span class="fa-ic">👀</span><div><b>Are you still there?</b><p>No face seen for <span id="faTime"></span>. Timer is still running.</p></div><button data-act="fa-dismiss">I'm back</button>`;
+        const ui = $('#focusUI') || $('#examUI');
+        if (ui) ui.appendChild(box);
+        const btn = box.querySelector('[data-act=fa-dismiss]');
+        if (btn) btn.addEventListener('click', () => { this.absentSince = null; this.alertShown = false; this._hideAlert(); });
+      }
+      const t = box.querySelector('#faTime');
+      if (t) t.textContent = secs + 's';
+      box.classList.add('visible');
+    },
+
+    _hideAlert() {
+      const box = $('#focusAlert');
+      if (box) box.classList.remove('visible');
+    },
+
+    setSensitivity(secs) { this.ABSENT_SECS = Math.max(5, secs); }
+  };
+
   /* ---------- share link encoding ---------- */
   function b64url(u8) { let s = ''; for (let i = 0; i < u8.length; i += 0x8000) s += String.fromCharCode.apply(null, u8.subarray(i, i + 0x8000)); return btoa(s).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, ''); }
   function unb64url(s) { s = s.replace(/-/g, '+').replace(/_/g, '/'); while (s.length % 4) s += '='; const b = atob(s); const u = new Uint8Array(b.length); for (let i = 0; i < b.length; i++) u[i] = b.charCodeAt(i); return u; }
@@ -713,6 +796,8 @@
       </section>
       <section class="panel"><h2>Focus room</h2>
         <label class="check-line"><input type="checkbox" ${set.camInFocus ? 'checked' : ''} data-bind="settings.camInFocus"> Turn the camera on beside the timer when I start studying</label>
+        <label class="check-line"><input type="checkbox" ${set.focusMonitor !== false ? 'checked' : ''} data-bind="settings.focusMonitor"> Alert me if I leave the camera view (face detection)</label>
+        ${set.focusMonitor !== false ? `<div class="field" style="max-width:320px;margin-left:28px"><span class="lbl">Alert after being away for <output id="fmOut">${set.focusDelay || 20}s</output></span><input type="range" min="5" max="60" step="5" value="${set.focusDelay || 20}" data-input="fm-delay" aria-label="Absent seconds before alert"></div>` : ''}
         <div class="form-grid four">
           <label class="field"><span>Pomodoro study minutes</span><input type="number" min="5" value="${set.work}" data-bind="settings.work" data-num></label>
           <label class="field"><span>Break minutes</span><input type="number" min="1" value="${set.brk}" data-bind="settings.brk" data-num></label>
@@ -787,11 +872,13 @@
     applyFocusTheme(); renderTools(); renderClock(); renderDrawer();
     Object.entries(st().settings.sounds).forEach(([k, v]) => SN.Sound.play(k, v));
     SN.Sound.setMaster(st().settings.master);
+    if (ui.camOn && st().settings.focusMonitor !== false) FocusMonitor.start();
     updateRunPill();
   }
   function closeFocus() {
     ui.focusOpen = false; $('#focus').hidden = true; document.body.classList.remove('no-scroll');
     if (focusScene) focusScene.stop();
+    FocusMonitor.stop();
     Cam.stop(); SN.Sound.stopAll();
     ui.focusPanel = null; ui.readerId = null;
     if (ui.readerUrl) { URL.revokeObjectURL(ui.readerUrl); ui.readerUrl = null; }
@@ -932,7 +1019,7 @@
     examScene = examScene || new SN.Scene($('#examCanvas'));
     examScene.start(st().settings.scene === 'custom' ? 'snow' : st().settings.scene, st().settings.customBg);
     renderExamUI();
-    if (e.camera) Cam.attach($('#examCam'));
+    if (e.camera) { Cam.attach($('#examCam')); if (st().settings.focusMonitor !== false) FocusMonitor.start(); }
     const el = document.documentElement;
     if (el.requestFullscreen && !document.fullscreenElement) el.requestFullscreen().catch(() => {});
     SN.Sound.chime(1);
@@ -990,6 +1077,7 @@
     ui.examId = null; ui.attemptId = null;
     $('#examRoom').hidden = true; document.body.classList.remove('no-scroll');
     if (examScene) examScene.stop();
+    FocusMonitor.stop();
     Cam.stop();
     if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
     SN.Sound.chime(auto ? 2 : 1);
@@ -1263,7 +1351,11 @@
   };
   A['focus-stop'] = () => { stopTimer(); renderClock(); };
   A['focus-skip'] = endBreak;
-  A['focus-cam'] = () => { ui.camOn = !ui.camOn; renderTools(); renderClock(); };
+  A['focus-cam'] = () => {
+    ui.camOn = !ui.camOn; renderTools(); renderClock();
+    if (ui.camOn && st().settings.focusMonitor !== false) FocusMonitor.start();
+    else FocusMonitor.stop();
+  };
   A['fullscreen'] = () => { if (document.fullscreenElement) document.exitFullscreen(); else $('#focus').requestFullscreen && $('#focus').requestFullscreen().catch(() => toast('Full screen is not available here.')); };
   A['scene'] = (el) => {
     const k = el.dataset.s, set = st().settings;
@@ -1369,7 +1461,8 @@
     'q-opt': (el) => { ui.examDraft.questions[+el.dataset.q].options[+el.dataset.o] = el.value; },
     'ans': (el) => { const a = attempt(); if (!a) return; a.answers[el.dataset.q] = el.value; save(); updateExamProgress(); },
     'snd-master': (el) => { st().settings.master = +el.value; SN.Sound.setMaster(+el.value); save(); },
-    'snd-vol': (el) => { st().settings.sounds[el.dataset.s] = +el.value; SN.Sound.setVol(el.dataset.s, +el.value); save(); }
+    'snd-vol': (el) => { st().settings.sounds[el.dataset.s] = +el.value; SN.Sound.setVol(el.dataset.s, +el.value); save(); },
+    'fm-delay': (el) => { st().settings.focusDelay = +el.value; FocusMonitor.setSensitivity(+el.value); const o = $('#fmOut'); if (o) o.textContent = el.value + 's'; save(); }
   };
   const CHG = {
     'mk-commit': () => render(),
