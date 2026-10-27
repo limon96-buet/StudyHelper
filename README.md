@@ -1,4 +1,4 @@
-# Shikhor (শিখর)
+# StudyHelper
 
 **A calm study space for students.** Track your syllabus as a mountain climb, time your study inside animated nature scenes with soft ambient sound, see exactly how many marks you need in the term final for an A+, and sit mock exams with your camera on and a clock running.
 
