@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Shikhor | A calm study space for students</title>
+  <meta name="description" content="Track your syllabus, time your study with calming nature scenes, plan the marks you need for an A+, and sit mock exams with a camera and timer. Free and open source.">
+  <meta name="theme-color" content="#F3F7F8">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 40 40'><rect width='40' height='40' rx='10' fill='%23E4EEF1'/><path d='M5 32L18 12l6 9 4-5 9 16z' fill='%232E6B5E'/><path d='M15 16.6L18 12l3 4.5-1.6 1.4-1.4-1.6-1.6 1.6z' fill='white'/></svg>">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Lexend:wght@300;400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <a class="skip" href="#view">Skip to content</a>
+  <div id="app">
+    <aside class="sidebar" id="sidebar"></aside>
+    <header class="topbar" id="topbar"></header>
+    <main id="view" tabindex="-1"></main>
+  </div>
+  <nav class="tabbar" id="tabbar" aria-label="Main"></nav>
+
+  <!-- Focus room: nature scene, timer, camera, sounds, reader -->
+  <div class="overlay" id="focus" hidden>
+    <canvas class="scene-canvas" id="focusCanvas" aria-hidden="true"></canvas>
+    <div class="focus-ui" id="focusUI"></div>
+  </div>
+
+  <!-- Exam room -->
+  <div class="overlay" id="examRoom" hidden>
+    <canvas class="scene-canvas" id="examCanvas" aria-hidden="true"></canvas>
+    <div class="scene-dim"></div>
+    <div class="exam-ui" id="examUI"></div>
+  </div>
+
+  <div class="modal" id="modal" hidden><div class="modal-card" id="modalCard" role="dialog" aria-modal="true"></div></div>
+  <div class="toasts" id="toasts" role="status" aria-live="polite"></div>
+  <input type="file" id="filePicker" hidden>
+
+  <script src="js/store.js"></script>
+  <script src="js/charts.js"></script>
+  <script src="js/scenes.js"></script>
+  <script src="js/sounds.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
